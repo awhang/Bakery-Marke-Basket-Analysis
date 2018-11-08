@@ -1,0 +1,172 @@
+---
+title: "Exploratory Analysis of Bakery Data"
+author: "Andrew Whang"
+date: "October 26, 2018"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Import data and Packages
+Load packages, lubridate, dplyr, ggplot2, bindrcpp.
+Data was found from Kaggle at <https://www.kaggle.com/xvivancos/transactions-from-a-bakery>
+```{r message = FALSE, warning = FALSE}
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+library(bindrcpp)
+df <- read.csv("BreadBasket_DMS.csv")
+```
+
+### Date and Time Conversions
+Convert Date and Time to proper formats
+Also add columns for day of the week and the month of the transaction
+
+```{r}
+df$Date <- as.Date(df$Date)
+df$Time <- hms(df$Time)
+df$weekday <- wday(df$Date, label = TRUE)
+df$month <- month(df$Date, label = TRUE)
+```
+### Note on filters
+We also remove items labeled as "NONE" and select the top 15 most sold items
+```{r message = FALSE, echo = FALSE}
+top_item <- df %>% 
+  select(Item) %>% 
+  filter(Item != "NONE") %>% 
+  group_by(Item) %>% 
+  tally() %>% 
+  top_n(15) %>% 
+  arrange(desc(n))
+```
+
+## Exploratory Analysis
+### By Item
+A plot of which items sell the most.
+
+```{r echo = FALSE}
+ggplot(top_item, aes(x = reorder(Item, -n), y = n)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Seems like coffee and bread make up the most items sold
+
+### By day of the week
+A plot by day of the week shows Saturday sells the most
+
+```{r echo = FALSE}
+top_item_wday <- df %>% 
+  select(weekday, Item) %>% 
+  filter(Item != "NONE") %>% 
+  group_by(weekday) %>% 
+  tally()
+
+ggplot(top_item_wday, aes(x = reorder(weekday, -n), y = n)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+### By day of the week and n item sold
+Let's see if there are any differences in which items are sold based on day of the week for each day the top 6 items are selected. 
+
+```{r message = FALSE, echo = FALSE}
+top_item_wday3 <- df %>% 
+  select(weekday, Item) %>% 
+  filter(Item != "NONE") %>% 
+  group_by(weekday, Item) %>%
+  tally() %>% 
+  top_n(6)
+
+ggplot(top_item_wday3, aes(x = reorder(weekday, -n), y = n)) +
+  geom_bar(stat = "identity") +
+  facet_grid(~ Item) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Initially, Medialuna appears only on Sunday as a popular item but later on I discovered this was an issue with the coding which elimated values on months where Medialuna isn't in the top 6 for that month and possible be the 7th most item sold in that month.
+
+Here is a graph of weekday items sold for 'top 6' items, with the items specifically 
+mentioned in a vector where we can run the filter through.
+
+```{r message = FALSE, echo = FALSE}
+topitems <- c("Coffee", "Bread", "Tea", "Cake", "Pastry", "Sandwich")
+
+top_item_wday4 <- df %>% 
+  select(weekday, Item) %>% 
+  filter(Item %in% topitems) %>% 
+  group_by(weekday, Item) %>%
+  tally() 
+
+ggplot(top_item_wday4, aes(x = reorder(weekday, -n), y = n)) +
+  geom_bar(stat = "identity") +
+  facet_grid(~ Item) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+### By month analysis of items sold
+I removed April and October since those are the start and end months of data collection which likely caused data to be incomplete for those months.
+
+```{r message = FALSE, echo = FALSE}
+top_item_month <- df %>% 
+  select(month, Item) %>% 
+  filter(Item != "NONE", month != "Oct", month != "Apr") %>% 
+  group_by(month, Item) %>%
+  tally() %>% 
+  top_n(5)
+
+ggplot(top_item_month, aes(x = reorder(month, -n), y = n)) +
+  geom_bar(stat = "identity") +
+  facet_grid(~ Item) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+It's odd that some months have so little sold in Pastry, Sandwhich, and Medialuna
+Is this observation valid?
+(This is where I discovered my issue in my coding method)
+
+Let's graph just medialuna, pastry, and sandwich by month.
+
+```{r message = FALSE, echo = FALSE}
+low_item_month <- df %>% 
+  select(month, Item) %>% 
+  filter(month != "Oct", month != "Apr", Item == "Medialuna" | Item == "Pastry" | Item == "Sandwich") %>% 
+  group_by(month, Item) %>%
+  tally() 
+ggplot(low_item_month, aes(x = reorder(month, -n), y = n)) +
+  geom_bar(stat = "identity") +
+  facet_grid(~ Item) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Try to graph all items per month again but filter items specifically, instead of using top_n
+
+```{r message = FALSE, echo = FALSE}
+topitems2 <- c("Coffee", "Bread", "Tea", "Cake", "Pastry", "Sandwich", "Medialuna")
+top_item_month2 <- df %>% 
+  select(month, Item) %>% 
+  filter(month != "Oct", month != "Apr", Item %in% topitems2) %>% 
+  group_by(month, Item) %>%
+  tally() 
+
+ggplot(top_item_month2, aes(x = reorder(month, -n), y = n)) +
+  geom_bar(stat = "identity") +
+  facet_grid(~ Item) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+The method of using top_n messes up when a month has a different top_n that others don't have.
+Here we accurately see the amounts of each item.
+
+Let's look at how many items are bought per transaction 
+```{r message = FALSE, echo = FALSE}
+items_per_trans <- df %>%
+  select(Item, Transaction) %>% 
+  group_by(Transaction) %>% 
+  tally() %>% 
+  arrange(desc(n))
+```
